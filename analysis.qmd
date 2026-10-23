@@ -1,28 +1,36 @@
 ---
-title: "2026 Florida Democratic Primary for Governor"
+title: "2026 Florida Primary for Governor"
 format: html
+execute:
+  echo: false
+  message: false
+  warning: false
 ---
 
 ```{r}
-#| message: false
-
 library(tidyverse)
+library(sf)
+library(tigris)
 
 # Extract the 67 county files to a temporary folder and read the key columns
 files <- unzip("2026-pri-outputofficial.zip", exdir = tempdir())
 
-gov_dem <- read_tsv(
+gov_votes <- read_tsv(
   files,
   col_names = FALSE,
-  col_select = c(office = 12, candidate = 15, party = 16, votes = 19),
+  col_select = c(county = 2, office = 12, candidate = 15, party = 16, votes = 19),
   quote = "",
   show_col_types = FALSE
 ) |>
-  filter(office == "Governor", party == "DEM") |>
+  filter(office == "Governor", party %in% c("DEM", "REP"))
+
+# Sum votes by Democratic candidate statewide
+dem_candidates <- gov_votes |>
+  filter(party == "DEM") |>
   summarize(total_votes = sum(votes, na.rm = TRUE), .by = candidate)
 
-# Plot total votes by candidate, ordered from most to fewest votes
-ggplot(gov_dem, aes(x = total_votes, y = fct_reorder(candidate, total_votes))) +
+# Plot total votes by candidate in the Democratic primary
+ggplot(dem_candidates, aes(x = total_votes, y = fct_reorder(candidate, total_votes))) +
   geom_col(fill = "steelblue") +
   scale_x_continuous(labels = scales::label_comma()) +
   labs(
@@ -33,4 +41,61 @@ ggplot(gov_dem, aes(x = total_votes, y = fct_reorder(candidate, total_votes))) +
     caption = "Source: Florida Division of Elections"
   ) +
   theme_minimal()
+```
+
+```{r}
+#| fig-height: 11
+
+# Compare Republican and Democratic primary votes by county
+county_party <- gov_votes |>
+  summarize(total_votes = sum(votes, na.rm = TRUE), .by = c(county, party))
+
+ggplot(county_party, aes(x = total_votes, y = fct_reorder(county, total_votes, .fun = sum), fill = party)) +
+  geom_col(position = "dodge") +
+  scale_fill_manual(
+    values = c("DEM" = "steelblue", "REP" = "firebrick"),
+    labels = c("DEM" = "Democratic", "REP" = "Republican")
+  ) +
+  scale_x_continuous(labels = scales::label_comma()) +
+  labs(
+    title = "Governor Primary Votes by County and Party",
+    subtitle = "Comparing Democratic and Republican primary turnout across all 67 counties",
+    x = "Total Votes",
+    y = NULL,
+    fill = "Party",
+    caption = "Source: Florida Division of Elections"
+  ) +
+  theme_minimal()
+```
+
+```{r}
+# Join county vote totals with Florida county map boundaries
+county_summary <- county_party |>
+  pivot_wider(names_from = party, values_from = total_votes, values_fill = 0) |>
+  mutate(
+    county_key = str_to_lower(county),
+    dem_share = DEM / (DEM + REP)
+  )
+
+fl_map <- counties("FL", cb = TRUE, progress_bar = FALSE) |>
+  mutate(county_key = str_to_lower(NAME)) |>
+  left_join(county_summary, by = "county_key")
+
+# Map the balance of Democratic vs. Republican primary votes across counties
+ggplot(fl_map, aes(fill = dem_share)) +
+  geom_sf(color = "white", linewidth = 0.2) +
+  scale_fill_gradient2(
+    low = "firebrick",
+    mid = "white",
+    high = "steelblue",
+    midpoint = 0.5,
+    labels = scales::label_percent()
+  ) +
+  labs(
+    title = "Republican vs. Democratic Primary Vote Share by County",
+    subtitle = "Blue counties cast more Democratic primary votes; red counties cast more Republican primary votes",
+    fill = "Dem Share\nof Primary Votes",
+    caption = "Source: Florida Division of Elections & U.S. Census Bureau"
+  ) +
+  theme_void()
 ```
