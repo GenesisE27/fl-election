@@ -1,0 +1,36 @@
+---
+title: "2026 Florida Democratic Primary for Governor"
+format: html
+---
+
+```{r}
+#| message: false
+
+library(tidyverse)
+
+# Extract the 67 county files to a temporary folder and read the key columns
+files <- unzip("2026-pri-outputofficial.zip", exdir = tempdir())
+
+gov_dem <- read_tsv(
+  files,
+  col_names = FALSE,
+  col_select = c(office = 12, candidate = 15, party = 16, votes = 19),
+  quote = "",
+  show_col_types = FALSE
+) |>
+  filter(office == "Governor", party == "DEM") |>
+  summarize(total_votes = sum(votes, na.rm = TRUE), .by = candidate)
+
+# Plot total votes by candidate, ordered from most to fewest votes
+ggplot(gov_dem, aes(x = total_votes, y = fct_reorder(candidate, total_votes))) +
+  geom_col(fill = "steelblue") +
+  scale_x_continuous(labels = scales::label_comma()) +
+  labs(
+    title = "2026 Florida Democratic Primary for Governor",
+    subtitle = "Official statewide vote totals by candidate",
+    x = "Total Votes",
+    y = NULL,
+    caption = "Source: Florida Division of Elections"
+  ) +
+  theme_minimal()
+```
